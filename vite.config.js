@@ -4,6 +4,6 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   base: '/3Dvisualiser/', // Set base path for GitHub Pages
   build: {
-    outDir: 'dist' // Ensure output directory is 'dist'
+    outDir: 'docs' // CHANGE: Ensure output directory is 'docs' for GitHub Pages
   }
 }); 
