@@ -33,17 +33,17 @@ export class Visualizer {
         this.gui = null;
         this.gltfLoader = null; // Add loader instance
         this.loadedObject = null; // To store the loaded model group
-        this.originalModelPositions = null; // To store original vertex data
-        this.originalModelNormals = null; // Store original normals
         this.modelIsLoaded = false; // Flag
         this.reactiveMeshesData = []; // Array to hold data for all reactive meshes { mesh, geometry, originalPositions, originalNormals, currentVertexData }
         this.isFullscreen = false; // Track fullscreen state
+        this.originalGridPositions = null; // To store original grid vertex positions
 
         this.params = {
             hue: 0.6, // Start with blue/cyan
             brightness: 0.5,
             glow: 1.0,
             amplitude: 5.0,
+            reactionMode: 'displacement', // New: 'displacement' or 'deformation'
             lineThickness: 1, // Note: WebGL line width support is limited
             crtAmount: 0.2, // Intensity of scan lines/noise
             chromaticAberration: 0.0015,
@@ -93,7 +93,7 @@ export class Visualizer {
     }
 
     _setupGrid() {
-        const size = 10;
+        const size = 50;
         const divisions = this.params.gridResolution;
         this.gridGeometry = new THREE.PlaneGeometry(size, size, divisions, divisions);
 
@@ -109,7 +109,8 @@ export class Visualizer {
 
         // Initialize data for decay calculation
         const vertexCount = this.gridGeometry.attributes.position.count;
-        this.currentVertexData = new Float32Array(vertexCount); // Store Y values
+        this.currentVertexData = new Float32Array(vertexCount); // Store Y values (for displacement) or scale offset (for deformation)
+        this.originalGridPositions = this.gridGeometry.attributes.position.clone(); // Store original positions
     }
 
     _setupPostProcessing() {
@@ -177,6 +178,7 @@ export class Visualizer {
         const audioFolder = this.gui.addFolder('Audio Reactivity');
         audioFolder.add(this.params, 'amplitude', 0, 20, 0.1).name('Amplitude');
         audioFolder.add(this.params, 'decay', 0.8, 0.999, 0.001).name('Peak Decay');
+        audioFolder.add(this.params, 'reactionMode', ['displacement', 'deformation']).name('Reaction Mode'); // Add dropdown
 
         const appearanceFolder = this.gui.addFolder('Appearance');
         appearanceFolder.add(this.params, 'hue', 0, 1, 0.01).name('Hue').onChange(this._updateMaterialColor.bind(this));
@@ -478,75 +480,134 @@ export class Visualizer {
             this.reactiveMeshesData.forEach(meshData => {
                 const { geometry, originalPositions, originalNormals, currentVertexData } = meshData;
                 const positions = geometry.attributes.position;
-                const normals = geometry.attributes.normal; // Use computed/loaded normals
                 const vertexCount = positions.count;
 
-                for (let i = 0; i < vertexCount; i++) {
-                    const currentDisplacement = currentVertexData[i] || 0;
-                    let targetDisplacement = 0;
+                // --- Mode-Specific Update Logic ---
+                if (this.params.reactionMode === 'displacement') {
+                    // Original displacement logic
+                    const normals = geometry.attributes.normal; // Get normals for displacement
+                    for (let i = 0; i < vertexCount; i++) {
+                        const currentDisplacement = currentVertexData[i] || 0;
+                        let targetDisplacement = 0;
+                        const freqIndex = i % Math.floor(freqBinCount * 0.8);
 
-                    // Map frequency bins sequentially to vertices (simple mapping for this mesh)
-                    // Use ~80% of bins (skip highest frequencies)
-                    const freqIndex = i % Math.floor(freqBinCount * 0.8);
+                        if (freqIndex < freqBinCount) {
+                            const freqValue = frequencyData[freqIndex] / 255;
+                            targetDisplacement = freqValue * targetAmplitude;
+                        }
 
-                    if (freqIndex < freqBinCount) {
-                        const freqValue = frequencyData[freqIndex] / 255; // Normalize 0-1
-                        targetDisplacement = freqValue * targetAmplitude;
+                        const displacement = Math.max(targetDisplacement, currentDisplacement * this.params.decay);
+                        currentVertexData[i] = displacement;
+
+                        tempPosition.fromBufferAttribute(originalPositions, i);
+                        tempNormal.fromBufferAttribute(normals, i); // Use the correct normal
+                        tempPosition.addScaledVector(tempNormal, displacement);
+                        positions.setXYZ(i, tempPosition.x, tempPosition.y, tempPosition.z);
                     }
+                } else if (this.params.reactionMode === 'deformation') {
+                    // New deformation logic (scale from origin)
+                    for (let i = 0; i < vertexCount; i++) {
+                        const currentScaleOffset = currentVertexData[i] || 0; // Reinterpret stored data as scale offset
+                        let targetScaleOffset = 0;
+                        const freqIndex = i % Math.floor(freqBinCount * 0.8);
 
-                    // Apply decay
-                    const displacement = Math.max(targetDisplacement, currentDisplacement * this.params.decay);
-                    currentVertexData[i] = displacement; // Store for next frame's decay
+                        if (freqIndex < freqBinCount) {
+                            const freqValue = frequencyData[freqIndex] / 255;
+                            // Adjust amplitude sensitivity for scaling - might need tuning
+                            targetScaleOffset = freqValue * (targetAmplitude * 0.5); // Start with less intense scaling
+                        }
 
-                    // Get original position and normal for this vertex
-                    tempPosition.fromBufferAttribute(originalPositions, i);
-                    tempNormal.fromBufferAttribute(originalNormals, i);
+                        // Apply decay to the scale offset
+                        const scaleOffset = Math.max(targetScaleOffset, currentScaleOffset * this.params.decay);
+                        currentVertexData[i] = scaleOffset; // Store offset for next frame
 
-                    // Calculate new position along the normal
-                    tempPosition.addScaledVector(tempNormal, displacement);
+                        // Calculate final scale factor (1.0 is original size)
+                        const finalScaleFactor = 1.0 + scaleOffset;
 
-                    // Update the geometry attribute for this mesh
-                    positions.setXYZ(i, tempPosition.x, tempPosition.y, tempPosition.z);
+                        // Get original position and scale it
+                        tempPosition.fromBufferAttribute(originalPositions, i);
+                        tempPosition.multiplyScalar(finalScaleFactor);
+
+                        // Update the geometry attribute
+                        positions.setXYZ(i, tempPosition.x, tempPosition.y, tempPosition.z);
+                    }
                 }
+                // ------------------------------------
 
                 positions.needsUpdate = true; // VERY important for this mesh's geometry
             });
 
-        } else if (this.gridMesh && this.gridGeometry) {
+        } else if (this.gridMesh && this.gridGeometry && this.originalGridPositions) { // Check originalGridPositions exists
             // --- Update Grid Vertices (Fallback Logic) ---
             const positions = this.gridGeometry.attributes.position;
             const vertexCount = positions.count;
             const divisions = this.params.gridResolution;
             const pointsPerSlice = divisions + 1;
             const targetAmplitude = this.params.amplitude; // Use original amplitude for grid
-            // Get the single currentVertexData array for the grid (assuming it's still needed if grid exists)
-            let gridVertexData = this.currentVertexData; // We need to ensure this exists if grid is active
-             if (!gridVertexData && vertexCount > 0) { // Initialize if somehow missing
+            let gridVertexData = this.currentVertexData;
+             if (!gridVertexData || gridVertexData.length !== vertexCount) { // Re-initialize if missing or wrong size
                  console.warn("Re-initializing grid vertex data.");
                  gridVertexData = new Float32Array(vertexCount);
-                 this.currentVertexData = gridVertexData; // Store it back if we created it
+                 this.currentVertexData = gridVertexData;
              }
 
-            // Map frequency data to grid vertices
-            for (let i = 0; i < vertexCount; i++) {
-                const currentY = gridVertexData[i] || 0;
-                let targetY = 0;
+            const tempPosition = new THREE.Vector3(); // Reusable vector for deformation
 
-                // Map frequency bins along the Z axis (rows of the grid)
-                const zIndex = Math.floor(i / pointsPerSlice);
-                // Distribute available frequency bins across the grid depth
-                const freqIndex = Math.floor((zIndex / pointsPerSlice) * freqBinCount * 0.8); // Use ~80% of bins
+            // --- Grid Mode-Specific Update Logic ---
+            if (this.params.reactionMode === 'displacement') {
+                // Original Y-displacement logic
+                for (let i = 0; i < vertexCount; i++) {
+                    const currentY = gridVertexData[i] || 0;
+                    let targetY = 0;
+                    const zIndex = Math.floor(i / pointsPerSlice);
+                    const validBinCount = Math.floor(freqBinCount * 0.8);
+                    const freqIndex = Math.min(validBinCount - 1, Math.floor((zIndex / Math.max(1, divisions)) * validBinCount));
 
-                if (freqIndex < freqBinCount) {
-                    const freqValue = frequencyData[freqIndex] / 255; // Normalize 0-1
-                    targetY = freqValue * targetAmplitude;
+                    if (freqIndex >= 0 && freqIndex < freqBinCount) {
+                        const freqValue = frequencyData[freqIndex] / 255;
+                        targetY = freqValue * targetAmplitude;
+                    } else {
+                        targetY = 0;
+                    }
+
+                    const newY = Math.max(targetY, currentY * this.params.decay);
+                    // IMPORTANT: Use original X and Z, only modify Y
+                    tempPosition.fromBufferAttribute(this.originalGridPositions, i);
+                    positions.setXYZ(i, tempPosition.x, newY, tempPosition.z);
+                    // positions.setY(i, newY); // Original way, less safe if geometry changes
+                    gridVertexData[i] = newY; // Store displacement for next frame
                 }
+            } else if (this.params.reactionMode === 'deformation') {
+                // New deformation logic for grid (scale from center 0,0,0 in local space)
+                 const deformationAmplitude = targetAmplitude * 0.1; // Scale amplitude for deformation effect - NEEDS TUNING
+                for (let i = 0; i < vertexCount; i++) {
+                     const currentScaleOffset = gridVertexData[i] || 0;
+                     let targetScaleOffset = 0;
+                     const zIndex = Math.floor(i / pointsPerSlice); // Simple mapping like displacement for now
+                     const validBinCount = Math.floor(freqBinCount * 0.8);
+                     const freqIndex = Math.min(validBinCount - 1, Math.floor((zIndex / Math.max(1, divisions)) * validBinCount));
 
-                // Apply decay: move current towards 0, but jump up if target is higher
-                const newY = Math.max(targetY, currentY * this.params.decay);
-                positions.setY(i, newY);
-                gridVertexData[i] = newY; // Store for next frame's decay
+                     if (freqIndex >= 0 && freqIndex < freqBinCount) {
+                         const freqValue = frequencyData[freqIndex] / 255;
+                         targetScaleOffset = freqValue * deformationAmplitude;
+                     } else {
+                         targetScaleOffset = 0;
+                     }
+
+                     const scaleOffset = Math.max(targetScaleOffset, currentScaleOffset * this.params.decay);
+                     gridVertexData[i] = scaleOffset; // Store offset for next frame
+
+                     const finalScaleFactor = 1.0 + scaleOffset;
+
+                     // Get original position and scale it from the grid's local origin (0,0,0)
+                     tempPosition.fromBufferAttribute(this.originalGridPositions, i);
+                     tempPosition.multiplyScalar(finalScaleFactor);
+
+                     // Update the geometry attribute
+                     positions.setXYZ(i, tempPosition.x, tempPosition.y, tempPosition.z); // Update X, Y, and Z
+                 }
             }
+            // ------------------------------------
 
             positions.needsUpdate = true; // VERY important
         }
