@@ -11,15 +11,12 @@ canvas {
 
 /* Mobile Styles */
 @media (max-width: 768px) {
-  /* Add mobile-specific styles here */
-  /* For example, hide the GUI controls or adjust canvas */
+  /* Hide main panel by default, show settings toggle button */
 
-  /* Example: Hide lil-gui by default on mobile */
-  /* .lil-gui { display: none; } */
-
-  /* Center, scale down, and make scrollable */
-  body .lil-gui.root { /* Increased specificity */
-    position: fixed !important; /* Override inline styles */
+  /* Center, scale down, and make scrollable WHEN VISIBLE */
+  body .lil-gui.root {
+    display: none; /* Hide by default on mobile */
+    position: fixed !important;
     top: 50% !important;
     left: 50% !important;
     transform: translate(-50%, -50%) scale(0.85) !important; /* Center and scale */
@@ -28,9 +25,20 @@ canvas {
     overflow-y: auto !important; /* Enable vertical scroll */
     z-index: 1000 !important; /* Ensure it's on top */
   }
+
+  /* Rule to show the panel when toggled */
+  body .lil-gui.root.visible {
+      display: block; /* Or display: revert; */
+  }
 }
 
 /* General Styles for lil-gui */
+/* Ensure lil-gui is displayed by default on desktop */
+body .lil-gui.root {
+    /* No display property needed here, defaults to block usually */
+    /* Or explicitly: display: block; */
+}
+
 .lil-gui {
   opacity: 1;
   pointer-events: auto;
@@ -40,4 +48,29 @@ canvas {
 .lil-gui.hidden {
   opacity: 0;
   pointer-events: none;
+}
+
+/* Styles for the dedicated settings toggle button */
+.settings-toggle-button {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    z-index: 1001; /* Above the GUI panel when visible */
+    background-color: rgba(0, 0, 0, 0.6);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 4px;
+    padding: 8px 10px;
+    font-size: 16px; /* Adjust as needed */
+    cursor: pointer;
+    line-height: 1;
+}
+
+.settings-toggle-button:hover {
+    background-color: rgba(0, 0, 0, 0.8);
+}
+
+/* Rule to hide the toggle button during fullscreen */
+.settings-toggle-button.hidden-by-fullscreen {
+    display: none;
 } 

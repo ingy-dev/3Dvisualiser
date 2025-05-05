@@ -43,7 +43,7 @@ export class Visualizer {
             hue: 0.6, // Start with blue/cyan
             brightness: 0.5,
             glow: 1.0,
-            amplitude: 5.0,
+            amplitude: 15.0,
             reactionMode: 'displacement', // New: 'displacement' or 'deformation'
             lineThickness: 1, // Note: WebGL line width support is limited
             crtAmount: 0.2, // Intensity of scan lines/noise
@@ -254,6 +254,30 @@ export class Visualizer {
         this.canvas.addEventListener('dblclick', this._toggleFullScreen.bind(this), false);
         window.addEventListener('keydown', this._onKeyDown.bind(this), false);
         document.addEventListener('fullscreenchange', this._onFullScreenChange.bind(this), false);
+
+        // --- Settings Toggle Button Listener ---
+        const settingsToggleButton = document.getElementById('settings-toggle');
+        const guiElement = this.gui?.domElement;
+
+        if (settingsToggleButton && guiElement) {
+            settingsToggleButton.addEventListener('click', () => {
+                console.log("Settings button clicked");
+                guiElement.classList.toggle('visible');
+                // When manually shown, reset the auto-hide timer (if enabled)
+                if (guiElement.classList.contains('visible')) {
+                     console.log("GUI toggled visible, resetting auto-hide timer.");
+                    this._resetAutoHideTimer();
+                } else {
+                    // Clear timer if manually hidden
+                     console.log("GUI toggled hidden, clearing auto-hide timer.");
+                    clearTimeout(this.hideControlsTimeout);
+                    this.hideControlsTimeout = null;
+                }
+            });
+        } else {
+            console.warn("Settings toggle button or GUI element not found.");
+        }
+        // --------------------------------------
     }
 
     _onWindowResize() {
@@ -322,6 +346,18 @@ export class Visualizer {
             this.gui.show();
             this.canvas.style.cursor = 'auto';
         }
+
+        // --- Toggle settings button visibility --- 
+        const settingsButton = document.getElementById('settings-toggle');
+        if (settingsButton) {
+            if (this.isFullscreen) {
+                settingsButton.classList.add('hidden-by-fullscreen');
+            } else {
+                settingsButton.classList.remove('hidden-by-fullscreen');
+            }
+        }
+        // -------------------------------------------
+
         // It might be necessary to trigger a resize event handler after a short delay
         // to ensure canvas/renderer size is correct after fullscreen change, especially exit.
         setTimeout(() => this._onWindowResize(), 50);
@@ -339,9 +375,16 @@ export class Visualizer {
 
         // Function to hide the GUI
         const hideGUI = () => {
-            if (!this.gui.domElement.classList.contains('hidden')) {
+            // Only hide if it's currently marked as visible (relevant for mobile toggle)
+            if (this.gui.domElement.classList.contains('visible') && !this.gui.domElement.classList.contains('hidden')) {
                 console.log("Auto-hiding controls.");
                 this.gui.domElement.classList.add('hidden');
+                // Also remove the 'visible' class if hiding via timer on mobile?
+                // Check window width to decide if we need to remove .visible
+                if (window.innerWidth <= 768) { 
+                     console.log("Removing .visible class on auto-hide (mobile).");
+                    this.gui.domElement.classList.remove('visible');
+                }
             }
         };
 
@@ -349,6 +392,14 @@ export class Visualizer {
         this._resetAutoHideTimer = () => {
             clearTimeout(this.hideControlsTimeout);
             this.hideControlsTimeout = null;
+
+            // Only proceed if the GUI should be fundamentally visible (e.g., has .visible class on mobile)
+            const isGuiVisible = this.gui.domElement.classList.contains('visible') || window.innerWidth > 768;
+            if (!isGuiVisible) {
+                 console.log("Auto-hide timer: GUI not visible, skipping timer reset.");
+                return; // Don't show or set timer if it shouldn't be visible anyway
+            }
+
             if (this.gui.domElement.classList.contains('hidden')) {
                 console.log("Showing controls due to interaction or toggle.");
                 this.gui.domElement.classList.remove('hidden');
