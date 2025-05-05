@@ -43,8 +43,8 @@ export class Visualizer {
             hue: 0.6, // Start with blue/cyan
             brightness: 0.5,
             glow: 1.0,
-            amplitude: 15.0,
-            reactionMode: 'displacement', // New: 'displacement' or 'deformation'
+            amplitude: 15.0, // Default amplitude
+            reactionMode: 'displacement', // Default reaction mode
             lineThickness: 1, // Note: WebGL line width support is limited
             crtAmount: 0.2, // Intensity of scan lines/noise
             chromaticAberration: 0.0015,
@@ -689,12 +689,23 @@ export class Visualizer {
             } else if (this.params.reactionMode === 'deformation') {
                 // New deformation logic for grid (scale from center 0,0,0 in local space)
                  const deformationAmplitude = targetAmplitude * 0.1; // Scale amplitude for deformation effect - NEEDS TUNING
+                 const gridSize = 50; // Match the size used in _setupGrid
+                 const maxDist = Math.sqrt(2 * Math.pow(gridSize / 2, 2)); // Max distance from center (half diagonal)
+
                 for (let i = 0; i < vertexCount; i++) {
                      const currentScaleOffset = gridVertexData[i] || 0;
                      let targetScaleOffset = 0;
-                     const zIndex = Math.floor(i / pointsPerSlice); // Simple mapping like displacement for now
+
+                     // --- New Radial Mapping --- 
+                     tempPosition.fromBufferAttribute(this.originalGridPositions, i);
+                     // Use original X and Y from PlaneGeometry (before rotation) for distance
+                     const dist = Math.sqrt(tempPosition.x * tempPosition.x + tempPosition.y * tempPosition.y);
+                     const normalizedDist = Math.min(1.0, dist / maxDist);
+                     // --------------------------
+
                      const validBinCount = Math.floor(freqBinCount * 0.8);
-                     const freqIndex = Math.min(validBinCount - 1, Math.floor((zIndex / Math.max(1, divisions)) * validBinCount));
+                     // Map normalized distance to frequency index
+                     const freqIndex = Math.min(validBinCount - 1, Math.floor(normalizedDist * validBinCount));
 
                      if (freqIndex >= 0 && freqIndex < freqBinCount) {
                          const freqValue = frequencyData[freqIndex] / 255;

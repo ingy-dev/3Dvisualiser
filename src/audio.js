@@ -21,8 +21,8 @@ export class AudioProcessor {
             this.stream = await navigator.mediaDevices.getUserMedia({
                 audio: {
                     // Optional: Disable noise suppression/echo cancellation for raw data
-                    // noiseSuppression: false,
-                    // echoCancellation: false
+                    noiseSuppression: false,
+                    echoCancellation: false
                 },
                 video: false
             });
