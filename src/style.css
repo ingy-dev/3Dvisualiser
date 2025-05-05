@@ -7,4 +7,37 @@ body {
 
 canvas {
   display: block; /* Remove default inline space */
+}
+
+/* Mobile Styles */
+@media (max-width: 768px) {
+  /* Add mobile-specific styles here */
+  /* For example, hide the GUI controls or adjust canvas */
+
+  /* Example: Hide lil-gui by default on mobile */
+  /* .lil-gui { display: none; } */
+
+  /* Center, scale down, and make scrollable */
+  body .lil-gui.root { /* Increased specificity */
+    position: fixed !important; /* Override inline styles */
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) scale(0.85) !important; /* Center and scale */
+    transform-origin: center center;
+    max-height: 80vh !important; /* Limit height */
+    overflow-y: auto !important; /* Enable vertical scroll */
+    z-index: 1000 !important; /* Ensure it's on top */
+  }
+}
+
+/* General Styles for lil-gui */
+.lil-gui {
+  opacity: 1;
+  pointer-events: auto;
+  transition: opacity 0.5s ease-in-out;
+}
+
+.lil-gui.hidden {
+  opacity: 0;
+  pointer-events: none;
 } 

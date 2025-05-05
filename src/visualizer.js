@@ -37,6 +37,7 @@ export class Visualizer {
         this.reactiveMeshesData = []; // Array to hold data for all reactive meshes { mesh, geometry, originalPositions, originalNormals, currentVertexData }
         this.isFullscreen = false; // Track fullscreen state
         this.originalGridPositions = null; // To store original grid vertex positions
+        this.hideControlsTimeout = null; // Timer ID for auto-hiding controls
 
         this.params = {
             hue: 0.6, // Start with blue/cyan
@@ -54,7 +55,8 @@ export class Visualizer {
             glitchEnabled: false, // Add glitch toggle parameter
             autoRotate: true, // Add auto-rotate toggle
             autoRotateSpeed: 0.005, // Add auto-rotate speed
-            autoRotateReverse: false // Add reverse rotation toggle
+            autoRotateReverse: false, // Add reverse rotation toggle
+            autoHideControls: true // Add auto-hide controls toggle
         };
 
         this.currentVertexData = null; // To store displaced vertex heights for decay
@@ -65,6 +67,7 @@ export class Visualizer {
         this._setupGUI();
         this._addEventListeners();
         this._initLoaders(); // Initialize loaders
+        this._setupAutoHideControls(); // Setup auto-hide logic
     }
 
     _initThree() {
@@ -220,6 +223,18 @@ export class Visualizer {
             }
         });
 
+        // --- Auto Hide Controls --- 
+        const settingsFolder = this.gui.addFolder('Settings');
+        settingsFolder.add(this.params, 'autoHideControls').name('Auto Hide Controls').onChange(() => {
+            this._resetAutoHideTimer(); // Reset timer logic when toggled
+        });
+        // Add Fullscreen Button
+        const fullscreenActions = {
+            toggle: () => { this._toggleFullScreen(); }
+        };
+        settingsFolder.add(fullscreenActions, 'toggle').name('Toggle Fullscreen');
+        // ---------------------------
+
         // Note: Changing grid resolution requires recreating geometry, more complex
         // appearanceFolder.add(this.params, 'gridResolution', 10, 100, 1).name('Grid Resolution (Requires Reload)');
     }
@@ -312,6 +327,49 @@ export class Visualizer {
         setTimeout(() => this._onWindowResize(), 50);
     }
     // --- End Fullscreen Handling ---
+
+    // --- Auto Hide Controls Logic ---
+    _setupAutoHideControls() {
+        if (!this.gui || !this.gui.domElement) {
+            console.error("GUI not initialized, cannot set up auto-hide.");
+            return;
+        }
+
+        const guiElement = this.gui.domElement;
+
+        // Function to hide the GUI
+        const hideGUI = () => {
+            if (!this.gui.domElement.classList.contains('hidden')) {
+                console.log("Auto-hiding controls.");
+                this.gui.domElement.classList.add('hidden');
+            }
+        };
+
+        // Function to reset the timer and show the GUI
+        this._resetAutoHideTimer = () => {
+            clearTimeout(this.hideControlsTimeout);
+            this.hideControlsTimeout = null;
+            if (this.gui.domElement.classList.contains('hidden')) {
+                console.log("Showing controls due to interaction or toggle.");
+                this.gui.domElement.classList.remove('hidden');
+            }
+
+            // Only set the timeout if the feature is enabled
+            if (this.params.autoHideControls) {
+                // console.log("Setting auto-hide timer.");
+                this.hideControlsTimeout = setTimeout(hideGUI, 3000); // 3 seconds
+            }
+        };
+
+        // Event listeners on the GUI element itself
+        guiElement.addEventListener('mousemove', this._resetAutoHideTimer, false);
+        guiElement.addEventListener('mousedown', this._resetAutoHideTimer, false); // Handle clicks too
+        guiElement.addEventListener('touchstart', this._resetAutoHideTimer, { passive: true });
+
+        // Initial timer start if enabled
+        this._resetAutoHideTimer();
+    }
+    // --- End Auto Hide Controls Logic ---
 
     // Add file selection handler
     _onFileSelected(event) {
