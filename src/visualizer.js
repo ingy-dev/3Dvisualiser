@@ -56,7 +56,7 @@ export class Visualizer {
             autoRotate: true, // Add auto-rotate toggle
             autoRotateSpeed: 0.005, // Add auto-rotate speed
             autoRotateReverse: false, // Add reverse rotation toggle
-            autoHideControls: true // Add auto-hide controls toggle
+            autoHideControls: false // Add auto-hide controls toggle
         };
 
         this.currentVertexData = null; // To store displaced vertex heights for decay
